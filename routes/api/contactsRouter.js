@@ -83,4 +83,26 @@ router.put('/:contactId', async (req, res, next) => {
   }
 })
 
+router.patch('/:contactId/favorite', async (req, res) => {
+  try {
+    const { error } = favoriteValidation.validate(req.body);
+
+    if (error) {
+      const err = new Error("Missing field favorite");
+      err.status = 400;
+    }
+
+    const { contactId } = req.params;
+    const result = await Contact.findByIdAndUpdate(contactId, req.body, { new: true, });
+    if (!result) {
+      const err = new Error("Content not found");
+      err.status = 404;
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export { router };
