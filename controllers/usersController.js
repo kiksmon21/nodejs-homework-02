@@ -8,6 +8,8 @@ import 'dotenv/config';
 import { User } from '../models/usersModel.js';
 import { signupValidation, subscriptionValidation } from '../validation/validation.js';
 import { httpError } from '../helpers/httpError.js';
+import { sendEmail } from '../helpers/sendEmail.js';
+import { v4 as uuid4 } from 'uuid';
 
 const { SECRET_KEY } = process.env;
 
@@ -28,7 +30,15 @@ const signupUser = async (req, res) => {
 
   const avatarURL = gravatar.url(email, { protocol: "http" });
 
-  const newUser = await User.create({ email, password: hashPassword, avatarURL });
+  const verificationToken = uuid4();
+
+  const newUser = await User.create({ email, password: hashPassword, avatarURL, verificationToken });
+
+  await sendEmail({
+    to: email,
+    subject: "Action Required: Verify Your Email",
+    html: `<a target="_blank" href="http://localhost:${PORT}/api/users/verify/${verificationToken}">Click to verify email</a>`,
+  });
 
   res.status(201).json({
     user: {
@@ -122,4 +132,50 @@ const updateAvatar = async (req, res) => {
   res.status(200).json({ avatarURL });
 };
 
-export { signupUser, loginUser, logoutUser, getCurrentUsers, updateUserSubscription, updateAvatar };
+const verifyEmail = async (req, res) => {
+  const { verificationToken } = req.params;
+
+  const user = await User.findOne({ verificationToken });
+
+  if (!user) {
+    throw httpError(400, "User not found");
+  }
+
+  await User.findByIdAndUpdate(user._id, {
+    verify: true,
+    verificationToken: null,
+  });
+
+  res.json({
+    message: "Verification successful",
+  });
+};
+
+const resendVerifyEmail = async (req, res) => {
+  const { email } = req.body;
+
+  const { error } = emailValidation.validate(req.body);
+  if (error) {
+    throw httpError(400, error.message);
+  }
+
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    throw httpError(404, "The provided email address could not be found");
+  }
+
+  if (user.verify) {
+    throw httpError(400, "Verification has already been passed");
+  }
+
+  await sendEmail({
+    to: email,
+    subject: "Action Required: Verify Your Email",
+    html: `<a target="_blank" href="http://localhost:${PORT}/api/users/verify/${user.verificationToken}">Click to verify email</a>`,
+  });
+
+  res.json({ message: "Verification email sent" });
+};
+
+export { signupUser, loginUser, logoutUser, getCurrentUsers, updateUserSubscription, updateAvatar, verifyEmail, resendVerifyEmail };
